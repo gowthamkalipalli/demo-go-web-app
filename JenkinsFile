@@ -1,0 +1,118 @@
+pipeline {
+    agent {
+        docker {
+            image 'your-docker-image:latest'
+            label 'docker-slave'
+        }
+    }
+    
+    environment {
+        SONARQUBE_URL = 'http://sonarqube.example.com'
+        SONARQUBE_TOKEN = credentials('sonarqube-token-id')
+        DOCKER_REGISTRY = 'your-docker-registry'
+        DOCKER_CREDENTIALS_ID = credentials('docker-credentials-id')
+        OWASP_DEPLOYMENT_URL = 'http://owasp-scanner.example.com'
+        TRIVY_IMAGE = 'aquasec/trivy:latest'
+        CONTAINER_NAME = 'your-container'
+    }
+    
+    stages {
+        stage('Checkout') {
+            steps {
+                checkout scm
+            }
+        }
+        
+        stage('SonarQube Analysis') {
+            steps {
+                script {
+                    withSonarQubeEnv('SonarQube') {
+                        sh 'mvn clean verify sonar:sonar'
+                    }
+                }
+            }
+        }
+        
+        stage('Quality Gate') {
+            steps {
+                script {
+                    timeout(time: 1, unit: 'HOURS') {
+                        waitForQualityGate abortPipeline: true
+                    }
+                }
+            }
+        }
+        
+        stage('Install Dependencies') {
+            steps {
+                sh 'mvn clean install'
+            }
+        }
+        
+        stage('OWASP File Scan') {
+            steps {
+                script {
+                    sh 'curl -X POST "${OWASP_DEPLOYMENT_URL}/scan" -F "file=@your-file.zip"'
+                }
+            }
+        }
+        
+        stage('Trivy Scan') {
+            steps {
+                script {
+                    docker.image(TRIVY_IMAGE).inside {
+                        sh 'trivy fs --no-progress .'
+                    }
+                }
+            }
+        }
+        
+        stage('Docker Build') {
+            steps {
+                script {
+                    docker.build("your-image-name:${env.BUILD_ID}")
+                }
+            }
+        }
+        
+        stage('Docker Push') {
+            steps {
+                script {
+                    docker.withRegistry('https://' + DOCKER_REGISTRY, DOCKER_CREDENTIALS_ID) {
+                        sh 'docker push your-image-name:${env.BUILD_ID}'
+                    }
+                }
+            }
+        }
+        
+        stage('Trivy Scan for Docker Image') {
+            steps {
+                script {
+                    docker.image(TRIVY_IMAGE).inside {
+                        sh 'trivy image --no-progress your-image-name:${env.BUILD_ID}'
+                    }
+                }
+            }
+        }
+        
+        stage('Deploy to Container') {
+            steps {
+                script {
+                    sh 'kubectl set image deployment/${CONTAINER_NAME} ${CONTAINER_NAME}=your-docker-registry/your-image-name:${env.BUILD_ID}'
+                }
+            }
+        }
+    }
+    
+    post {
+        always {
+            cleanWs()
+        }
+        success {
+            echo 'Pipeline succeeded!'
+        }
+        failure {
+            echo 'Pipeline failed.'
+        }
+    }
+}
