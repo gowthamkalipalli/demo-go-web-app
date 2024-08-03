@@ -1,36 +1,49 @@
 pipeline {
     agent {
         docker {
-            image 'gowthamk4/gowtham-docker-agent:v1'
+            image 'gowthamk4/go-app:latest'
+            label 'docker-slave'
             args '--user root -v /var/run/docker.sock:/var/run/docker.sock'
         }
     }
-    
+
+    environment {
+        SONARQUBE_URL = 'http://sonarqube.example.com'
+        SONARQUBE_TOKEN = credentials('sonarqube-token-id')
+        DOCKER_REGISTRY = 'your-docker-registry'
+        DOCKER_CREDENTIALS_ID = credentials('docker-credentials-id')
+        OWASP_DEPLOYMENT_URL = 'http://owasp-scanner.example.com'
+        TRIVY_IMAGE = 'aquasec/trivy:latest'
+        CONTAINER_NAME = 'your-container'
+    }
+
     stages {
         stage('Checkout') {
             steps {
-                sh 'echo passed'
-                //checkout scm
-                //Git(branches: [[name: '*/main']], extensions: [], userRemoteConfigs: [[url: 'https://github.com/gowthamkalipalli/demo-go-web-app']])
+                // Check out the source code into the workspace
+                checkout scm
             }
         }
         stage('Build') {
             steps {
-                sh 'go build -o myapp'
-            }
-        }
-        
-        stage('Static Code Analysis') {
-            environment {
-                SONAR_URL = "http://65.2.37.38:9000"
-            }
-            steps {
-                withCredentials([string(credentialsId: 'sonarqube', variable: 'SONAR_AUTH_TOKEN')]) {
-                    sh 'sonar-scanner -Dsonar.login=$SONAR_AUTH_TOKEN -Dsonar.host.url=${SONAR_URL}'
+                script {
+                    // Ensure this runs inside a node block
+                    sh 'go build -o myapp'
                 }
             }
         }
-        
+
+        stage('Static Code Analysis') {
+            steps {
+                script {
+                    // Ensure this runs inside a node block
+                    withCredentials([string(credentialsId: 'sonarqube', variable: 'SONAR_AUTH_TOKEN')]) {
+                        sh 'sonar-scanner -Dsonar.login=$SONAR_AUTH_TOKEN -Dsonar.host.url=${SONAR_URL}'
+                    }
+                }
+            }
+        }
+
         stage('Quality Gate') {
             steps {
                 script {
@@ -40,21 +53,27 @@ pipeline {
                 }
             }
         }
-        
+
         stage('Install Dependencies') {
             steps {
-                sh 'go mod tidy'
-            }
-        }
-        
-        stage('OWASP File Scan') {
-            steps {
                 script {
-                    sh 'curl -X POST "${OWASP_DEPLOYMENT_URL}/scan" -F "file=@your-file.zip"'
+                    // Ensure this runs inside a node block
+                    sh 'go mod tidy'
                 }
             }
         }
-        
+
+        stage('OWASP File Scan') {
+            steps {
+                script {
+                    // Ensure this runs inside a node block
+                    def filePath = 'path/to/your-file.zip'
+                    def scanUrl = "${OWASP_DEPLOYMENT_URL}/scan"
+                    sh "curl -X POST '${scanUrl}' -F 'file=@${filePath}'"
+                }
+            }
+        }
+
         stage('Trivy Scan') {
             steps {
                 script {
@@ -64,7 +83,7 @@ pipeline {
                 }
             }
         }
-        
+
         stage('Docker Build') {
             steps {
                 script {
@@ -72,7 +91,7 @@ pipeline {
                 }
             }
         }
-        
+
         stage('Docker Push') {
             steps {
                 script {
@@ -82,7 +101,7 @@ pipeline {
                 }
             }
         }
-        
+
         stage('Trivy Scan for Docker Image') {
             steps {
                 script {
@@ -92,16 +111,17 @@ pipeline {
                 }
             }
         }
-        
+
         stage('Deploy to Container') {
             steps {
                 script {
-                    sh 'docker run -d --name gowtham  -p 8080:8080 gowthamk4/go-app:v1'
+                    // Ensure this runs inside a node block
+                    sh 'kubectl set image deployment/${CONTAINER_NAME} ${CONTAINER_NAME}=your-docker-registry/your-image-name:${env.BUILD_ID}'
                 }
             }
         }
     }
-    
+
     post {
         always {
             cleanWs()
