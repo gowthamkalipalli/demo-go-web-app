@@ -2,7 +2,6 @@ pipeline {
     agent {
         docker {
             image 'gowthamk4/gowtham-docker-agent:v1'
-            label 'docker-slave'
             args '--user root -v /var/run/docker.sock:/var/run/docker.sock'
         }
     }
