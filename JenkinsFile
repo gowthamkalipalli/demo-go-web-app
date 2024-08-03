@@ -1,34 +1,33 @@
 pipeline {
     agent {
         docker {
-            image 'your-docker-image:latest'
+            image 'gowthamk4/gowtham-docker-agent:v1'
             label 'docker-slave'
+            args '--user root -v /var/run/docker.sock:/var/run/docker.sock'
         }
-    }
-    
-    environment {
-        SONARQUBE_URL = 'http://sonarqube.example.com'
-        SONARQUBE_TOKEN = credentials('sonarqube-token-id')
-        DOCKER_REGISTRY = 'your-docker-registry'
-        DOCKER_CREDENTIALS_ID = credentials('docker-credentials-id')
-        OWASP_DEPLOYMENT_URL = 'http://owasp-scanner.example.com'
-        TRIVY_IMAGE = 'aquasec/trivy:latest'
-        CONTAINER_NAME = 'your-container'
     }
     
     stages {
         stage('Checkout') {
             steps {
-                checkout scm
+                sh 'echo passed'
+                //checkout scm
+                //Git(branches: [[name: '*/main']], extensions: [], userRemoteConfigs: [[url: 'https://github.com/gowthamkalipalli/demo-go-web-app']])
+            }
+        }
+        stage('Build') {
+            steps {
+                sh 'go build -o myapp'
             }
         }
         
-        stage('SonarQube Analysis') {
+        stage('Static Code Analysis') {
+            environment {
+                SONAR_URL = "http://65.2.37.38:9000"
+            }
             steps {
-                script {
-                    withSonarQubeEnv('SonarQube') {
-                        sh 'mvn clean verify sonar:sonar'
-                    }
+                withCredentials([string(credentialsId: 'sonarqube', variable: 'SONAR_AUTH_TOKEN')]) {
+                    sh 'sonar-scanner -Dsonar.login=$SONAR_AUTH_TOKEN -Dsonar.host.url=${SONAR_URL}'
                 }
             }
         }
@@ -45,7 +44,7 @@ pipeline {
         
         stage('Install Dependencies') {
             steps {
-                sh 'mvn clean install'
+                sh 'go mod tidy'
             }
         }
         
@@ -70,7 +69,7 @@ pipeline {
         stage('Docker Build') {
             steps {
                 script {
-                    docker.build("your-image-name:${env.BUILD_ID}")
+                    docker.build("gowthamk4/go-app:${env.BUILD_ID}")
                 }
             }
         }
@@ -78,8 +77,8 @@ pipeline {
         stage('Docker Push') {
             steps {
                 script {
-                    docker.withRegistry('https://' + DOCKER_REGISTRY, DOCKER_CREDENTIALS_ID) {
-                        sh 'docker push your-image-name:${env.BUILD_ID}'
+                    docker.withRegistry('https://index.docker.io/v1/', DOCKER_CREDENTIALS_ID) {
+                        sh 'docker push gowthamk4/go-app:${env.BUILD_ID}'
                     }
                 }
             }
@@ -89,7 +88,7 @@ pipeline {
             steps {
                 script {
                     docker.image(TRIVY_IMAGE).inside {
-                        sh 'trivy image --no-progress your-image-name:${env.BUILD_ID}'
+                        sh 'trivy image --no-progress gowthamk4/go-app:${env.BUILD_ID}'
                     }
                 }
             }
@@ -98,7 +97,7 @@ pipeline {
         stage('Deploy to Container') {
             steps {
                 script {
-                    sh 'kubectl set image deployment/${CONTAINER_NAME} ${CONTAINER_NAME}=your-docker-registry/your-image-name:${env.BUILD_ID}'
+                    sh 'docker run -d --name gowtham  -p 8080:8080 gowthamk4/go-app:v1'
                 }
             }
         }
